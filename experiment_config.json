@@ -1,6 +1,9 @@
 {
     "serial_port": "com4",
     "parallel_sweep": true,
+    "prefix": "\u041d01.20",
+    "nfiles": 3,
+    "nrefls": 10000,
     "ch1": {
         "amplitude": {
             "min": 1.0,

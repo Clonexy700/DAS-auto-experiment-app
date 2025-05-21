@@ -55,6 +55,30 @@ class MainWindow(QMainWindow):
             serial_group.setLayout(serial_layout)
             layout.addWidget(serial_group)
 
+            # Add DAS configuration
+            das_group = QGroupBox("DAS Configuration")
+            das_layout = QFormLayout()
+            
+            # Prefix for experiment files
+            self.prefix_input = QLineEdit()
+            self.prefix_input.setPlaceholderText("Enter experiment prefix")
+            das_layout.addRow("Experiment Prefix:", self.prefix_input)
+            
+            # Number of files
+            self.nfiles_input = QSpinBox()
+            self.nfiles_input.setRange(1, 1000)
+            self.nfiles_input.setValue(3)
+            das_layout.addRow("Number of Files:", self.nfiles_input)
+            
+            # Number of reflections
+            self.nrefls_input = QSpinBox()
+            self.nrefls_input.setRange(1, 100000)
+            self.nrefls_input.setValue(10000)
+            das_layout.addRow("Number of Reflections:", self.nrefls_input)
+            
+            das_group.setLayout(das_layout)
+            layout.addWidget(das_group)
+
             # Create tab widget for channels
             self.tab_widget = QTabWidget()
             
@@ -165,6 +189,11 @@ class MainWindow(QMainWindow):
         try:
             # Connect serial port changes
             self.port_input.textChanged.connect(self.save_current_config)
+            
+            # Connect DAS configuration changes
+            self.prefix_input.textChanged.connect(self.save_current_config)
+            self.nfiles_input.valueChanged.connect(self.save_current_config)
+            self.nrefls_input.valueChanged.connect(self.save_current_config)
 
             # Connect all value change signals for each channel
             for ch in range(1, 4):
@@ -225,6 +254,14 @@ class MainWindow(QMainWindow):
             if "serial_port" in config:
                 self.port_input.setText(config["serial_port"])
 
+            # Load DAS configuration
+            if "prefix" in config:
+                self.prefix_input.setText(config["prefix"])
+            if "nfiles" in config:
+                self.nfiles_input.setValue(config["nfiles"])
+            if "nrefls" in config:
+                self.nrefls_input.setValue(config["nrefls"])
+
             # Load channel configurations
             for ch in range(1, 4):
                 ch_key = f"ch{ch}"
@@ -268,7 +305,10 @@ class MainWindow(QMainWindow):
         try:
             config = {
                 "serial_port": self.port_input.text(),
-                "parallel_sweep": True
+                "parallel_sweep": True,
+                "prefix": self.prefix_input.text(),
+                "nfiles": self.nfiles_input.value(),
+                "nrefls": self.nrefls_input.value()
             }
 
             # Get configuration for each channel
