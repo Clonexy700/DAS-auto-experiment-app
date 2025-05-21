@@ -14,6 +14,9 @@ class JsonConfigManager(ConfigProvider):
         self.default_config = {
             "serial_port": "com4",
             "parallel_sweep": True,
+            "prefix": "experiment",
+            "nfiles": 3,
+            "nrefls": 10000,
             "ch1": {
                 "amplitude": {"min": 0.0, "max": 10.0, "step": 1.0},
                 "bias": {"min": -5.0, "max": 5.0, "step": 1.0},
@@ -63,10 +66,18 @@ class JsonConfigManager(ConfigProvider):
         """Validate configuration values."""
         try:
             # Check required fields
-            required_fields = ["serial_port", "parallel_sweep"]
+            required_fields = ["serial_port", "parallel_sweep", "prefix", "nfiles", "nrefls"]
             for field in required_fields:
                 if field not in config:
                     return False
+
+            # Validate DAS-specific fields
+            if not isinstance(config["nfiles"], int) or config["nfiles"] <= 0:
+                return False
+            if not isinstance(config["nrefls"], int) or config["nrefls"] <= 0:
+                return False
+            if not isinstance(config["prefix"], str) or not config["prefix"]:
+                return False
 
             # Validate each channel
             for ch in ["ch1", "ch2", "ch3"]:
