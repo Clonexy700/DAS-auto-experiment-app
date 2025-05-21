@@ -1,2 +1,3 @@
-PyQt5
-pyserial
+PyQt5>=5.15.0
+pyserial>=3.5
+pztlibrary @ file://${PWD}/pztlibrary#egg=pztlibrary-1.0.0

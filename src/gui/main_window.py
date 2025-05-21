@@ -1,16 +1,19 @@
-import sys
+"""
+Main window implementation for the DAS Auto Experiment Application.
+"""
 import os
-from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                            QHBoxLayout, QLabel, QLineEdit, QComboBox,
-                            QPushButton, QFileDialog, QMessageBox, QGroupBox,
-                            QFormLayout, QSpinBox, QDoubleSpinBox, QProgressBar)
+from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+                            QLabel, QLineEdit, QComboBox, QPushButton,
+                            QMessageBox, QGroupBox, QFormLayout, QSpinBox,
+                            QDoubleSpinBox, QProgressBar)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from config_manager import ConfigManager
-from experiment_controller import ExperimentController
+from ..core.interfaces import ExperimentObserver
+from ..config.config_manager import JsonConfigManager
+from ..experiment.experiment_controller import ParameterSweepController
 
 class ExperimentThread(QThread):
+    """Thread for running experiments."""
     error = pyqtSignal(str)
-    progress = pyqtSignal(int, int)  # current, total
     finished = pyqtSignal()
 
     def __init__(self, controller):
@@ -25,15 +28,18 @@ class ExperimentThread(QThread):
         finally:
             self.finished.emit()
 
-class MainWindow(QMainWindow):
+class MainWindow(QMainWindow, ExperimentObserver):
+    """Main window for the application."""
+    
     def __init__(self):
         super().__init__()
-        self.config_manager = ConfigManager()
+        self.config_manager = JsonConfigManager()
         self.experiment_controller = None
         self.experiment_thread = None
         self.init_ui()
 
     def init_ui(self):
+        """Initialize the user interface."""
         self.setWindowTitle('Piezo Experiment Controller')
         self.setMinimumWidth(600)
 
@@ -129,7 +135,7 @@ class MainWindow(QMainWindow):
         self.load_config()
 
     def load_config(self):
-        """Load saved configuration into UI"""
+        """Load saved configuration into UI."""
         config = self.config_manager.config
         self.amp_min.setValue(config["amplitude"]["min"])
         self.amp_max.setValue(config["amplitude"]["max"])
@@ -146,7 +152,7 @@ class MainWindow(QMainWindow):
         self.nrefls.setValue(config["nrefls"])
 
     def get_config(self):
-        """Get current configuration from UI"""
+        """Get current configuration from UI."""
         return {
             "amplitude": {
                 "min": self.amp_min.value(),
@@ -170,7 +176,7 @@ class MainWindow(QMainWindow):
         }
 
     def start_experiment(self):
-        """Start the experiment"""
+        """Start the experiment."""
         config = self.get_config()
         if not self.config_manager.validate_config(config):
             QMessageBox.critical(self, "Error", "Invalid configuration")
@@ -187,7 +193,7 @@ class MainWindow(QMainWindow):
             return
 
         self.config_manager.save_config(config)
-        self.experiment_controller = ExperimentController(config)
+        self.experiment_controller = ParameterSweepController(config, self)
         self.experiment_thread = ExperimentThread(self.experiment_controller)
         self.experiment_thread.error.connect(self.handle_error)
         self.experiment_thread.finished.connect(self.experiment_finished)
@@ -200,19 +206,19 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Experiment running...")
 
     def stop_experiment(self):
-        """Stop the experiment"""
+        """Stop the experiment."""
         if self.experiment_controller:
             self.experiment_controller.stop_experiment()
             self.stop_button.setEnabled(False)
             self.status_label.setText("Stopping experiment...")
 
     def handle_error(self, error_msg):
-        """Handle experiment error"""
+        """Handle experiment error."""
         QMessageBox.critical(self, "Error", f"Experiment failed: {error_msg}")
         self.experiment_finished()
 
     def experiment_finished(self):
-        """Handle experiment completion"""
+        """Handle experiment completion."""
         if self.experiment_controller:
             self.experiment_controller.cleanup()
         self.start_button.setEnabled(True)
@@ -220,8 +226,21 @@ class MainWindow(QMainWindow):
         self.progress_bar.setVisible(False)
         self.status_label.setText("Ready")
 
+    def on_progress(self, current: int, total: int):
+        """Handle progress updates."""
+        self.progress_bar.setMaximum(total)
+        self.progress_bar.setValue(current)
+
+    def on_error(self, error: str):
+        """Handle error updates."""
+        self.handle_error(error)
+
+    def on_complete(self):
+        """Handle experiment completion."""
+        self.experiment_finished()
+
     def closeEvent(self, event):
-        """Handle window close"""
+        """Handle window close."""
         if self.experiment_controller:
             reply = QMessageBox.question(
                 self, 'Confirm Exit',
@@ -235,12 +254,4 @@ class MainWindow(QMainWindow):
             else:
                 event.ignore()
         else:
-            event.accept()
-
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    window = MainWindow()
-    window.show()
-    sys.exit(app.exec_())
-
-
+            event.accept() 
