@@ -1,94 +1,103 @@
 # DAS Auto Experiment Application
 
-An automated experiment application for controlling piezo actuators and performing data acquisition.
+## Описание
+Приложение для автоматизации экспериментов с пьезоэлектрическими устройствами. Программа позволяет управлять тремя каналами пьезоконтроллера, настраивать параметры сигналов и автоматически сохранять результаты измерений.
 
-## Features
+## Основные возможности
+- Управление тремя независимыми каналами пьезоконтроллера
+- Настройка параметров для каждого канала:
+  - Амплитуда (0-100 В)
+  - Смещение (bias, -100 до 100 В)
+  - Частота (0-1000 Гц)
+  - Тип сигнала (синус, меандр, треугольный, пилообразный)
+- Автоматическое сохранение конфигурации
+- Графический интерфейс с индикацией прогресса
+- Безопасное завершение работы с обнулением всех каналов
 
-- Configurable parameter sweeps for amplitude, bias, and frequency
-- Support for multiple waveform types (Sine, Square, Triangle, Sawtooth)
-- Real-time progress tracking
-- Automatic data acquisition using external executable
-- Configuration persistence
-- Error handling and cleanup
-
-## Requirements
-
-- Python 3.7+
+## Требования
+- Python 3.8 или выше
 - PyQt5
 - pyserial
-- pztlibrary
-- read_udp_das.exe (data acquisition executable)
+- Windows 10/11
 
-## Installation
-
-1. Clone the repository:
+## Установка
+1. Клонируйте репозиторий:
 ```bash
-git clone <repository-url>
+git clone https://github.com/your-username/DAS-auto-experiment-app.git
 cd DAS-auto-experiment-app
 ```
 
-2. Install dependencies:
+2. Создайте виртуальное окружение и активируйте его:
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+3. Установите зависимости:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Place `read_udp_das.exe` in the project root directory.
-
-## Usage
-
-1. Run the application:
+## Использование
+1. Запустите приложение:
 ```bash
-python src/main.py
+python main.py
 ```
 
-2. Configure experiment parameters:
-   - Set amplitude range (min, max, step)
-   - Set bias range (min, max, step)
-   - Set frequency range (min, max, step)
-   - Select waveform type
-   - Enter prefix for output files
-   - Set number of files and reflectograms
+2. Настройте параметры:
+   - Введите COM-порт для подключения к пьезоконтроллеру
+   - Настройте параметры DAS (префикс файлов, количество файлов, количество отражений)
+   - Для каждого канала установите:
+     - Минимальное и максимальное значение амплитуды
+     - Шаг изменения амплитуды
+     - Минимальное и максимальное значение смещения
+     - Шаг изменения смещения
+     - Минимальную и максимальную частоту
+     - Шаг изменения частоты
+     - Тип сигнала
 
-3. Click "Start Experiment" to begin the parameter sweep.
+3. Управление экспериментом:
+   - Нажмите "Start Experiment" для начала эксперимента
+   - Используйте "Stop Experiment" для безопасного завершения
+   - Прогресс отображается в нижней части окна
 
-4. Monitor progress using the progress bar and status label.
+## Безопасность
+- При запуске проверяется наличие read_udp_das.exe
+- Все каналы автоматически обнуляются при:
+  - Ошибках во время эксперимента
+  - Принудительной остановке
+  - Закрытии приложения
+- Конфигурация автоматически сохраняется при изменениях
 
-5. Click "Stop Experiment" to abort the experiment if needed.
-
-## Configuration
-
-The application saves the last used configuration in `config.json`. This file is automatically loaded when the application starts.
-
-## Error Handling
-
-The application includes comprehensive error handling:
-- Input validation
-- Device communication errors
-- Data acquisition errors
-- Resource cleanup on exit
-
-## Project Structure
-
+## Структура проекта
 ```
 DAS-auto-experiment-app/
-├── src/
-│   ├── core/
-│   │   └── interfaces.py
-│   ├── config/
-│   │   └── config_manager.py
-│   ├── devices/
-│   │   └── piezo_controller.py
-│   ├── acquisition/
-│   │   └── data_acquisition.py
-│   ├── experiment/
-│   │   └── experiment_controller.py
-│   ├── gui/
-│   │   └── main_window.py
-│   └── main.py
-├── requirements.txt
-└── README.md
+├── src/                    # Исходный код приложения
+│   ├── gui/               # Графический интерфейс
+│   ├── config/            # Управление конфигурацией
+│   ├── experiment/        # Логика экспериментов
+│   ├── devices/           # Управление устройствами
+│   └── acquisition/       # Сбор данных
+├── pztlibrary/            # Библиотека для работы с пьезоконтроллером
+├── main.py                # Точка входа в приложение
+└── requirements.txt       # Зависимости проекта
 ```
 
-## License
+## Устранение неполадок
+1. Если приложение не запускается:
+   - Проверьте установку всех зависимостей
+   - Убедитесь, что Python 3.8+ установлен
+   - Проверьте наличие read_udp_das.exe
 
-[Your License Here] 
+2. Если не удается подключиться к устройству:
+   - Проверьте правильность COM-порта
+   - Убедитесь, что устройство включено
+   - Проверьте подключение USB-кабеля
+
+3. Если эксперимент не запускается:
+   - Проверьте все параметры конфигурации
+   - Убедитесь, что значения находятся в допустимых диапазонах
+   - Проверьте логи в файле app.log
+
+## Лицензия
+MIT License. См. файл LICENSE для подробностей. 
