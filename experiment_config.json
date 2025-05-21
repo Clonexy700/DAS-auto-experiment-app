@@ -1,0 +1,22 @@
+{
+    "amplitude": {
+        "min": 1.0,
+        "max": 50.0,
+        "step": 5.0
+    },
+    "bias": {
+        "min": 0.5,
+        "max": 25.0,
+        "step": 2.5
+    },
+    "frequency": {
+        "min": 100.0,
+        "max": 100.0,
+        "step": 0.0
+    },
+    "waveform_type": "S",
+    "prefix": "\u041d01.20",
+    "nfiles": 3,
+    "nrefls": 10000,
+    "parallel_sweep": true
+}

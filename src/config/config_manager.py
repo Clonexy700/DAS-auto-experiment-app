@@ -18,26 +18,34 @@ class JsonConfigManager(ConfigProvider):
             "waveform_type": "Z",  # Z: sine, F: square, S: triangle, J: sawtooth
             "prefix": "experiment",
             "nfiles": 3,
-            "nrefls": 10000
+            "nrefls": 10000,
+            "parallel_sweep": True  # Enable parallel parameter sweeping
         }
         self.config = self.load_config()
 
     def load_config(self) -> Dict[str, Any]:
         """Load configuration from file or create default if not exists."""
-        if os.path.exists(self.config_file):
-            try:
+        try:
+            if os.path.exists(self.config_file):
                 with open(self.config_file, 'r') as f:
-                    return json.load(f)
-            except json.JSONDecodeError:
-                print(f"Error reading {self.config_file}, using default config")
-                return self.default_config.copy()
+                    config = json.load(f)
+                    # Ensure all required fields exist
+                    for key, value in self.default_config.items():
+                        if key not in config:
+                            config[key] = value
+                    return config
+        except (json.JSONDecodeError, IOError) as e:
+            print(f"Error reading {self.config_file}: {e}")
         return self.default_config.copy()
 
     def save_config(self, config: Dict[str, Any]) -> None:
         """Save configuration to file."""
-        with open(self.config_file, 'w') as f:
-            json.dump(config, f, indent=4)
-        self.config = config
+        try:
+            with open(self.config_file, 'w') as f:
+                json.dump(config, f, indent=4)
+            self.config = config
+        except IOError as e:
+            print(f"Error saving {self.config_file}: {e}")
 
     def validate_config(self, config: Dict[str, Any]) -> bool:
         """Validate configuration values."""
@@ -54,7 +62,7 @@ class JsonConfigManager(ConfigProvider):
                     return False
                 if config[param]["min"] > config[param]["max"]:
                     return False
-                if config[param]["step"] <= 0:
+                if config[param]["step"] < 0:  # Allow step = 0 for fixed parameters
                     return False
 
             # Validate waveform type

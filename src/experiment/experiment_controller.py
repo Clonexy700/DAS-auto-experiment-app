@@ -1,123 +1,140 @@
 """
-Experiment controller implementation.
+Experiment controller for parameter sweep experiments.
 """
 import os
-from typing import Dict, Any, Generator, Tuple
+import itertools
+from typing import List, Dict, Any, Optional
 from ..core.interfaces import ExperimentController, ExperimentObserver
 from ..devices.piezo_controller import PiezoController
 from ..acquisition.data_acquisition import DASDataAcquisition
 
 class ParameterSweepController(ExperimentController):
     """Controller for parameter sweep experiments."""
-    
-    def __init__(self, config: Dict[str, Any], observer: ExperimentObserver = None):
+
+    def __init__(self, config: Dict[str, Any], observer: Optional[ExperimentObserver] = None):
         self.config = config
         self.observer = observer
         self.piezo = PiezoController()
-        self.data_acquisition = DASDataAcquisition(config)
-        self.is_running = False
-        self.current_step = (0, 0, 0)
+        self.das = DASDataAcquisition()
+        self.running = False
+        self.current_step = 0
         self.total_steps = self._calculate_total_steps()
-        self.current_step_number = 0
-        self._prepare_directories()
-        
+
     def _calculate_total_steps(self) -> int:
         """Calculate total number of steps in the experiment."""
-        amp_steps = int((self.config["amplitude"]["max"] - self.config["amplitude"]["min"]) / 
-                       self.config["amplitude"]["step"]) + 1
-        bias_steps = int((self.config["bias"]["max"] - self.config["bias"]["min"]) / 
-                        self.config["bias"]["step"]) + 1
-        freq_steps = int((self.config["frequency"]["max"] - self.config["frequency"]["min"]) / 
-                        self.config["frequency"]["step"]) + 1
-        return amp_steps * bias_steps * freq_steps
+        amp_steps = len(self._get_range(self.config["amplitude"]))
+        bias_steps = len(self._get_range(self.config["bias"]))
+        freq_steps = len(self._get_range(self.config["frequency"]))
         
-    def _prepare_directories(self) -> None:
-        """Create necessary directories for the experiment."""
-        prefix = self.config["prefix"]
-        if not os.path.exists(prefix):
-            os.makedirs(prefix)
-            
-    def _generate_parameter_combinations(self) -> Generator[Tuple[float, float, float], None, None]:
-        """Generate all parameter combinations based on min/max/step values."""
+        if self.config.get("parallel_sweep", True):
+            # For parallel sweeping, we take the maximum number of steps
+            return max(amp_steps, bias_steps, freq_steps)
+        else:
+            # For sequential sweeping, we multiply the steps
+            return amp_steps * bias_steps * freq_steps
+
+    def _get_range(self, param: Dict[str, float]) -> List[float]:
+        """Generate range of values for a parameter."""
+        start = param["min"]
+        stop = param["max"]
+        step = param["step"]
+        
+        if step == 0:
+            # For step=0, we use a single value (the max value)
+            return [stop]
+        
+        return [start + i * step for i in range(int((stop - start) / step) + 1)]
+
+    def _generate_parameter_combinations(self) -> List[Dict[str, float]]:
+        """Generate parameter combinations for the experiment."""
         amp_range = self._get_range(self.config["amplitude"])
         bias_range = self._get_range(self.config["bias"])
         freq_range = self._get_range(self.config["frequency"])
-
-        for a in amp_range:
-            for b in bias_range:
-                for f in freq_range:
-                    yield a, b, f
-                    
-    def _get_range(self, param: Dict[str, float]) -> Generator[float, None, None]:
-        """Generate range of values for a parameter."""
-        current = param["min"]
-        while current <= param["max"]:
-            yield current
-            current += param["step"]
-            
-    def _create_output_folder(self, i: int, j: int, k: int, a: float, b: float, f: float) -> str:
-        """Create and return path to output folder for current step."""
-        folder_name = f"{i}_{j}_{k}_{self.config['prefix']} f={f} a={a} b={b}"
-        folder_path = os.path.join(self.config["prefix"], folder_name)
-        os.makedirs(folder_path, exist_ok=True)
-        return folder_path
         
+        if self.config.get("parallel_sweep", True):
+            # For parallel sweeping, we zip the ranges together
+            max_len = max(len(amp_range), len(bias_range), len(freq_range))
+            # Pad shorter ranges with their last value
+            amp_range = amp_range + [amp_range[-1]] * (max_len - len(amp_range))
+            bias_range = bias_range + [bias_range[-1]] * (max_len - len(bias_range))
+            freq_range = freq_range + [freq_range[-1]] * (max_len - len(freq_range))
+            
+            return [
+                {"amplitude": a, "bias": b, "frequency": f}
+                for a, b, f in zip(amp_range, bias_range, freq_range)
+            ]
+        else:
+            # For sequential sweeping, we generate all combinations
+            return [
+                {"amplitude": a, "bias": b, "frequency": f}
+                for a, b, f in itertools.product(amp_range, bias_range, freq_range)
+            ]
+
+    def _create_output_folder(self, params: Dict[str, float]) -> str:
+        """Create folder for output data."""
+        folder_name = f"{self.config['prefix']}_a{params['amplitude']:.1f}_b{params['bias']:.1f}_f{params['frequency']:.1f}"
+        os.makedirs(folder_name, exist_ok=True)
+        return folder_name
+
     def start_experiment(self) -> None:
         """Start the experiment."""
-        self.is_running = True
-        self.current_step_number = 0
-        i, j, k = 1, 1, 1
+        if self.running:
+            return
 
+        self.running = True
+        self.current_step = 0
+        
         try:
-            for a, b, f in self._generate_parameter_combinations():
-                if not self.is_running:
+            # Prepare directories
+            os.makedirs("data", exist_ok=True)
+            
+            # Generate parameter combinations
+            param_combinations = self._generate_parameter_combinations()
+            
+            for params in param_combinations:
+                if not self.running:
                     break
-
-                self.current_step_number += 1
-                if self.observer:
-                    self.observer.on_progress(self.current_step_number, self.total_steps)
-
+                
                 # Configure piezo
-                self.piezo.configure({
-                    "amplitude": a,
-                    "bias": b,
-                    "frequency": f,
-                    "waveform_type": self.config["waveform_type"]
+                self.piezo.configure_channels({
+                    "wave_type": self.config["waveform_type"],
+                    "ch1": {
+                        "v": params["amplitude"],
+                        "b": params["bias"],
+                        "f": params["frequency"]
+                    }
                 })
-
+                
                 # Create output folder
-                output_folder = self._create_output_folder(i, j, k, a, b, f)
-
+                output_folder = self._create_output_folder(params)
+                
                 # Acquire data
-                if not self.data_acquisition.acquire_data():
-                    raise Exception("Data acquisition failed")
-
-                # Move files
-                self.data_acquisition.move_data_files(output_folder)
-
-                # Update step counters
-                k += 1
-                if k > 9:
-                    k = 1
-                    j += 1
-                if j > 9:
-                    j = 1
-                    i += 1
-
+                self.das.acquire_data(
+                    nfiles=self.config["nfiles"],
+                    nrefls=self.config["nrefls"],
+                    target_folder=output_folder
+                )
+                
+                # Update progress
+                self.current_step += 1
+                if self.observer:
+                    self.observer.on_progress(self.current_step, self.total_steps)
+            
             if self.observer:
                 self.observer.on_complete()
-
+                
         except Exception as e:
-            self.is_running = False
             if self.observer:
                 self.observer.on_error(str(e))
-            raise e
-            
+        finally:
+            self.cleanup()
+
     def stop_experiment(self) -> None:
         """Stop the experiment."""
-        self.is_running = False
-        
+        self.running = False
+
     def cleanup(self) -> None:
         """Clean up resources."""
         self.piezo.cleanup()
-        self.data_acquisition.cleanup() 
+        self.das.cleanup()
+        self.running = False 

@@ -5,8 +5,8 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QPushButton, QFileDialog, QMessageBox, QGroupBox,
                             QFormLayout, QSpinBox, QDoubleSpinBox, QProgressBar)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from config_manager import ConfigManager
-from experiment_controller import ExperimentController
+from src.config.config_manager import JsonConfigManager
+from src.experiment.experiment_controller import ParameterSweepController
 
 class ExperimentThread(QThread):
     error = pyqtSignal(str)
@@ -28,10 +28,11 @@ class ExperimentThread(QThread):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.config_manager = ConfigManager()
+        self.config_manager = JsonConfigManager()
         self.experiment_controller = None
         self.experiment_thread = None
         self.init_ui()
+        self.setup_connections()
 
     def init_ui(self):
         self.setWindowTitle('Piezo Experiment Controller')
@@ -52,7 +53,7 @@ class MainWindow(QMainWindow):
         self.amp_step = QDoubleSpinBox()
         self.amp_min.setRange(-100, 100)
         self.amp_max.setRange(-100, 100)
-        self.amp_step.setRange(0.1, 100)
+        self.amp_step.setRange(0, 100)
         self.amp_step.setSingleStep(0.1)
         param_layout.addRow("Amplitude Min (V):", self.amp_min)
         param_layout.addRow("Amplitude Max (V):", self.amp_max)
@@ -64,7 +65,7 @@ class MainWindow(QMainWindow):
         self.bias_step = QDoubleSpinBox()
         self.bias_min.setRange(-100, 100)
         self.bias_max.setRange(-100, 100)
-        self.bias_step.setRange(0.1, 100)
+        self.bias_step.setRange(0, 100)
         self.bias_step.setSingleStep(0.1)
         param_layout.addRow("Bias Min (V):", self.bias_min)
         param_layout.addRow("Bias Max (V):", self.bias_max)
@@ -76,7 +77,7 @@ class MainWindow(QMainWindow):
         self.freq_step = QDoubleSpinBox()
         self.freq_min.setRange(0.1, 1000)
         self.freq_max.setRange(0.1, 1000)
-        self.freq_step.setRange(0.1, 100)
+        self.freq_step.setRange(0, 100)
         self.freq_step.setSingleStep(0.1)
         param_layout.addRow("Frequency Min (Hz):", self.freq_min)
         param_layout.addRow("Frequency Max (Hz):", self.freq_max)
@@ -121,12 +122,41 @@ class MainWindow(QMainWindow):
         button_layout.addWidget(self.stop_button)
         layout.addLayout(button_layout)
 
-        # Connect signals
+        # Load saved configuration
+        self.load_config()
+
+    def setup_connections(self):
+        """Set up signal connections for automatic saving."""
+        # Connect all value change signals
+        for widget in [self.amp_min, self.amp_max, self.amp_step,
+                      self.bias_min, self.bias_max, self.bias_step,
+                      self.freq_min, self.freq_max, self.freq_step,
+                      self.nfiles, self.nrefls]:
+            if isinstance(widget, QSpinBox):
+                widget.valueChanged.connect(self.save_current_config)
+            elif isinstance(widget, QDoubleSpinBox):
+                widget.valueChanged.connect(self.save_current_config)
+
+        # Connect step value changes to handle step=0
+        self.amp_step.valueChanged.connect(lambda v: self.handle_step_change(v, self.amp_min, self.amp_max))
+        self.bias_step.valueChanged.connect(lambda v: self.handle_step_change(v, self.bias_min, self.bias_max))
+        self.freq_step.valueChanged.connect(lambda v: self.handle_step_change(v, self.freq_min, self.freq_max))
+
+        # Connect text change signals
+        self.prefix.textChanged.connect(self.save_current_config)
+        self.waveform_type.currentTextChanged.connect(self.save_current_config)
+
+        # Connect experiment control signals
         self.start_button.clicked.connect(self.start_experiment)
         self.stop_button.clicked.connect(self.stop_experiment)
 
-        # Load saved configuration
-        self.load_config()
+    def save_current_config(self):
+        """Save current configuration to file."""
+        try:
+            config = self.get_config()
+            self.config_manager.save_config(config)
+        except Exception as e:
+            print(f"Error saving configuration: {e}")
 
     def load_config(self):
         """Load saved configuration into UI"""
@@ -166,7 +196,8 @@ class MainWindow(QMainWindow):
             "waveform_type": self.waveform_type.currentText()[0],
             "prefix": self.prefix.text(),
             "nfiles": self.nfiles.value(),
-            "nrefls": self.nrefls.value()
+            "nrefls": self.nrefls.value(),
+            "parallel_sweep": True
         }
 
     def start_experiment(self):
@@ -182,12 +213,21 @@ class MainWindow(QMainWindow):
             return
 
         # Check if read_udp_das.exe exists
-        if not os.path.exists("./read_udp_das.exe"):
-            QMessageBox.critical(self, "Error", "read_udp_das.exe not found in current directory")
+        exe_path = os.path.join("Alinx C Interrogate programm tool", "read_udp_das.exe")
+        if not os.path.exists(exe_path):
+            QMessageBox.critical(self, "Error", f"read_udp_das.exe not found at {exe_path}")
             return
 
-        self.config_manager.save_config(config)
-        self.experiment_controller = ExperimentController(config)
+        # Copy executable if needed
+        if not os.path.exists("read_udp_das.exe"):
+            try:
+                import shutil
+                shutil.copy2(exe_path, "read_udp_das.exe")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to copy read_udp_das.exe: {str(e)}")
+                return
+
+        self.experiment_controller = ParameterSweepController(config)
         self.experiment_thread = ExperimentThread(self.experiment_controller)
         self.experiment_thread.error.connect(self.handle_error)
         self.experiment_thread.finished.connect(self.experiment_finished)
@@ -236,6 +276,12 @@ class MainWindow(QMainWindow):
                 event.ignore()
         else:
             event.accept()
+
+    def handle_step_change(self, step_value: float, min_widget: QDoubleSpinBox, max_widget: QDoubleSpinBox):
+        """Handle step value changes, auto-copy max to min when step=0."""
+        if step_value == 0:
+            min_widget.setValue(max_widget.value())
+        self.save_current_config()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
