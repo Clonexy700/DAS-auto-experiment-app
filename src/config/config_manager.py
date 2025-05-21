@@ -12,14 +12,26 @@ class JsonConfigManager(ConfigProvider):
     def __init__(self, config_file: str = "experiment_config.json"):
         self.config_file = config_file
         self.default_config = {
-            "amplitude": {"min": 0.0, "max": 10.0, "step": 1.0},
-            "bias": {"min": -5.0, "max": 5.0, "step": 1.0},
-            "frequency": {"min": 1.0, "max": 100.0, "step": 10.0},
-            "waveform_type": "Z",  # Z: sine, F: square, S: triangle, J: sawtooth
-            "prefix": "experiment",
-            "nfiles": 3,
-            "nrefls": 10000,
-            "parallel_sweep": True  # Enable parallel parameter sweeping
+            "serial_port": "com4",
+            "parallel_sweep": True,
+            "ch1": {
+                "amplitude": {"min": 0.0, "max": 10.0, "step": 1.0},
+                "bias": {"min": -5.0, "max": 5.0, "step": 1.0},
+                "frequency": {"min": 0.0, "max": 100.0, "step": 10.0},
+                "waveform_type": "Z"
+            },
+            "ch2": {
+                "amplitude": {"min": 0.0, "max": 10.0, "step": 1.0},
+                "bias": {"min": -5.0, "max": 5.0, "step": 1.0},
+                "frequency": {"min": 0.0, "max": 100.0, "step": 10.0},
+                "waveform_type": "Z"
+            },
+            "ch3": {
+                "amplitude": {"min": 0.0, "max": 10.0, "step": 1.0},
+                "bias": {"min": -5.0, "max": 5.0, "step": 1.0},
+                "frequency": {"min": 0.0, "max": 100.0, "step": 10.0},
+                "waveform_type": "Z"
+            }
         }
         self.config = self.load_config()
 
@@ -51,29 +63,34 @@ class JsonConfigManager(ConfigProvider):
         """Validate configuration values."""
         try:
             # Check required fields
-            required_fields = ["amplitude", "bias", "frequency", "waveform_type", "prefix"]
+            required_fields = ["serial_port", "parallel_sweep"]
             for field in required_fields:
                 if field not in config:
                     return False
 
-            # Validate numeric ranges
-            for param in ["amplitude", "bias", "frequency"]:
-                if not all(k in config[param] for k in ["min", "max", "step"]):
+            # Validate each channel
+            for ch in ["ch1", "ch2", "ch3"]:
+                if ch not in config:
                     return False
-                if config[param]["min"] > config[param]["max"]:
-                    return False
-                if config[param]["step"] < 0:  # Allow step = 0 for fixed parameters
-                    return False
+                
+                ch_config = config[ch]
+                required_params = ["amplitude", "bias", "frequency", "waveform_type"]
+                for param in required_params:
+                    if param not in ch_config:
+                        return False
 
-            # Validate waveform type
-            if config["waveform_type"] not in ["Z", "F", "S", "J"]:
-                return False
+                # Validate numeric ranges for each parameter
+                for param in ["amplitude", "bias", "frequency"]:
+                    if not all(k in ch_config[param] for k in ["min", "max", "step"]):
+                        return False
+                    if ch_config[param]["min"] > ch_config[param]["max"]:
+                        return False
+                    if ch_config[param]["step"] < 0:  # Allow step = 0 for fixed parameters
+                        return False
 
-            # Validate nfiles and nrefls
-            if not isinstance(config.get("nfiles", 0), int) or config["nfiles"] <= 0:
-                return False
-            if not isinstance(config.get("nrefls", 0), int) or config["nrefls"] <= 0:
-                return False
+                # Validate waveform type
+                if ch_config["waveform_type"] not in ["Z", "F", "S", "J"]:
+                    return False
 
             return True
         except Exception:
