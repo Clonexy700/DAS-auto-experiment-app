@@ -7,10 +7,10 @@ import traceback
 from PyQt5.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QLabel, QLineEdit, QComboBox, QPushButton,
                             QMessageBox, QGroupBox, QFormLayout, QSpinBox,
-                            QDoubleSpinBox, QProgressBar, QTabWidget)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+                            QDoubleSpinBox, QProgressBar, QTabWidget, QFileDialog)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, pyqtSlot
 from ..core.interfaces import ExperimentObserver
-from ..config.config_manager import JsonConfigManager
+from ..config.config_manager import ConfigManager
 from ..experiment.experiment_controller import ParameterSweepController
 from .experiment_thread import ExperimentThread
 from pztlibrary import SerialConfigurator
@@ -22,7 +22,7 @@ class MainWindow(QMainWindow):
         try:
             super().__init__()
             logging.info("Initializing MainWindow")
-            self.config_manager = JsonConfigManager()
+            self.config_manager = ConfigManager("experiment_config.json")
             self.experiment_controller = None
             self.experiment_thread = None
             self.serial_controller = None
@@ -188,7 +188,7 @@ class MainWindow(QMainWindow):
         """Set up signal connections for automatic saving."""
         try:
             # Connect serial port changes
-            self.port_input.textChanged.connect(self.save_current_config)
+            self.port_input.textChanged.connect(self.save_current_config) # ignore
             
             # Connect DAS configuration changes
             self.prefix_input.textChanged.connect(self.save_current_config)
@@ -248,7 +248,7 @@ class MainWindow(QMainWindow):
     def load_config(self):
         """Load saved configuration into UI"""
         try:
-            config = self.config_manager.config
+            config = self.config_manager.load_config()
             
             # Load serial port
             if "serial_port" in config:

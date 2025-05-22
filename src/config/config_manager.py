@@ -1,108 +1,86 @@
 """
-Configuration management for the DAS Auto Experiment Application.
+Configuration manager for the application.
 """
 import json
 import os
 from typing import Dict, Any
-from ..core.interfaces import ConfigProvider
 
-class JsonConfigManager(ConfigProvider):
-    """JSON-based configuration manager."""
-    
-    def __init__(self, config_file: str = "experiment_config.json"):
-        self.config_file = config_file
-        self.default_config = {
-            "serial_port": "com4",
-            "parallel_sweep": True,
-            "prefix": "experiment",
-            "nfiles": 3,
-            "nrefls": 10000,
-            "ch1": {
-                "amplitude": {"min": 0.0, "max": 10.0, "step": 1.0},
-                "bias": {"min": -5.0, "max": 5.0, "step": 1.0},
-                "frequency": {"min": 0.0, "max": 100.0, "step": 10.0},
-                "waveform_type": "Z"
-            },
-            "ch2": {
-                "amplitude": {"min": 0.0, "max": 10.0, "step": 1.0},
-                "bias": {"min": -5.0, "max": 5.0, "step": 1.0},
-                "frequency": {"min": 0.0, "max": 100.0, "step": 10.0},
-                "waveform_type": "Z"
-            },
-            "ch3": {
-                "amplitude": {"min": 0.0, "max": 10.0, "step": 1.0},
-                "bias": {"min": -5.0, "max": 5.0, "step": 1.0},
-                "frequency": {"min": 0.0, "max": 100.0, "step": 10.0},
-                "waveform_type": "Z"
-            }
-        }
-        self.config = self.load_config()
+class ConfigManager:
+    """Manages application configuration."""
+
+    def __init__(self, config_path: str):
+        """Initialize with config file path."""
+        self.config_path = config_path
 
     def load_config(self) -> Dict[str, Any]:
-        """Load configuration from file or create default if not exists."""
+        """Load configuration from file."""
         try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r') as f:
-                    config = json.load(f)
-                    # Ensure all required fields exist
-                    for key, value in self.default_config.items():
-                        if key not in config:
-                            config[key] = value
-                    return config
-        except (json.JSONDecodeError, IOError) as e:
-            print(f"Error reading {self.config_file}: {e}")
-        return self.default_config.copy()
+            with open(self.config_path, 'r') as f:
+                return json.load(f)
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Config file not found: {self.config_path}")
+        except json.JSONDecodeError as e:
+            raise json.JSONDecodeError(f"Invalid JSON in config file: {str(e)}", e.doc, e.pos)
 
     def save_config(self, config: Dict[str, Any]) -> None:
         """Save configuration to file."""
-        try:
-            with open(self.config_file, 'w') as f:
-                json.dump(config, f, indent=4)
-            self.config = config
-        except IOError as e:
-            print(f"Error saving {self.config_file}: {e}")
+        if not isinstance(config, dict):
+            raise TypeError("Config must be a dictionary")
+        
+        with open(self.config_path, 'w') as f:
+            json.dump(config, f, indent=4)
 
     def validate_config(self, config: Dict[str, Any]) -> bool:
-        """Validate configuration values."""
-        try:
-            # Check required fields
-            required_fields = ["serial_port", "parallel_sweep", "prefix", "nfiles", "nrefls"]
-            for field in required_fields:
-                if field not in config:
-                    return False
-
-            # Validate DAS-specific fields
-            if not isinstance(config["nfiles"], int) or config["nfiles"] <= 0:
+        """Validate configuration structure."""
+        required_fields = {
+            "serial_port": str,
+            "prefix": str,
+            "parallel_sweep": bool,
+            "ch1": dict
+        }
+        
+        # Check required fields
+        for field, field_type in required_fields.items():
+            if field not in config:
                 return False
-            if not isinstance(config["nrefls"], int) or config["nrefls"] <= 0:
+            if not isinstance(config[field], field_type):
                 return False
-            if not isinstance(config["prefix"], str) or not config["prefix"]:
+        
+        # Check ch1 configuration
+        ch1_config = config["ch1"]
+        required_ch1_fields = {
+            "amplitude": dict,
+            "bias": dict,
+            "frequency": dict,
+            "waveform_type": str
+        }
+        
+        for field, field_type in required_ch1_fields.items():
+            if field not in ch1_config:
                 return False
+            if not isinstance(ch1_config[field], field_type):
+                return False
+        
+        # Check parameter ranges
+        for param in ["amplitude", "bias", "frequency"]:
+            param_config = ch1_config[param]
+            if not all(k in param_config for k in ["min", "max", "step"]):
+                return False
+            if not all(isinstance(param_config[k], (int, float)) for k in ["min", "max", "step"]):
+                return False
+        
+        return True
 
-            # Validate each channel
-            for ch in ["ch1", "ch2", "ch3"]:
-                if ch not in config:
-                    return False
-                
-                ch_config = config[ch]
-                required_params = ["amplitude", "bias", "frequency", "waveform_type"]
-                for param in required_params:
-                    if param not in ch_config:
-                        return False
-
-                # Validate numeric ranges for each parameter
-                for param in ["amplitude", "bias", "frequency"]:
-                    if not all(k in ch_config[param] for k in ["min", "max", "step"]):
-                        return False
-                    if ch_config[param]["min"] > ch_config[param]["max"]:
-                        return False
-                    if ch_config[param]["step"] < 0:  # Allow step = 0 for fixed parameters
-                        return False
-
-                # Validate waveform type
-                if ch_config["waveform_type"] not in ["Z", "F", "S", "J"]:
-                    return False
-
-            return True
-        except Exception:
-            return False 
+    def get_default_config(self) -> Dict[str, Any]:
+        """Get default configuration."""
+        return {
+            "serial_port": "com4",
+            "prefix": "experiment",
+            "parallel_sweep": True,
+            "ch1": {
+                "amplitude": {"min": 0.0, "max": 10.0, "step": 1.0},
+                "bias": {"min": -5.0, "max": 5.0, "step": 1.0},
+                "frequency": {"min": 100.0, "max": 200.0, "step": 10.0},
+                "waveform_type": "Z"
+            }
+        } 
