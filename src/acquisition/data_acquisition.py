@@ -67,7 +67,7 @@ class DASDataAcquisition(DataAcquisition):
             
             # Run the data acquisition program
             subprocess.check_call([
-                "./read_udp_das.exe",
+                "./udp_das_cringe.exe",
                 "--dir", "refls1",
                 "--nfiles", str(self.config["nfiles"]),
                 "--nrefls", str(self.config["nrefls"])

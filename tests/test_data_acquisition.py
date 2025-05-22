@@ -43,7 +43,7 @@ class TestDASDataAcquisition(unittest.TestCase):
         self.assertTrue(result)
         
         mock_check_call.assert_called_once_with([
-            "./read_udp_das.exe",
+            "./udp_das_cringe.exe",
             "--dir", "refls1",
             "--nfiles", "3",
             "--nrefls", "10000"
@@ -52,7 +52,7 @@ class TestDASDataAcquisition(unittest.TestCase):
     @patch('subprocess.check_call')
     def test_acquire_data_failure(self, mock_check_call):
         """Test data acquisition failure."""
-        mock_check_call.side_effect = subprocess.CalledProcessError(1, "read_udp_das.exe")
+        mock_check_call.side_effect = subprocess.CalledProcessError(1, "udp_das_cringe.exe")
         
         with self.assertRaises(subprocess.CalledProcessError):
             self.acquisition.acquire_data()
@@ -165,7 +165,7 @@ class TestDASDataAcquisition(unittest.TestCase):
         acquisition.acquire_data()
         
         mock_check_call.assert_called_with([
-            "./read_udp_das.exe",
+            "./udp_das_cringe.exe",
             "--dir", "refls1",
             "--nfiles", "5",
             "--nrefls", "10000"
@@ -177,7 +177,7 @@ class TestDASDataAcquisition(unittest.TestCase):
         acquisition.acquire_data()
         
         mock_check_call.assert_called_with([
-            "./read_udp_das.exe",
+            "./udp_das_cringe.exe",
             "--dir", "refls1",
             "--nfiles", "5",
             "--nrefls", "20000"

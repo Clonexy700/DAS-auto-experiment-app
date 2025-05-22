@@ -14,6 +14,7 @@ from ..config.config_manager import ConfigManager
 from ..experiment.experiment_controller import ParameterSweepController
 from .experiment_thread import ExperimentThread
 from pztlibrary import SerialConfigurator
+import shutil
 
 class MainWindow(QMainWindow):
     """Main window for the application."""
@@ -385,19 +386,18 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", "Please enter a serial port")
                 return
 
-            # Check if read_udp_das.exe exists
-            exe_path = os.path.join("Alinx C Interrogate programm tool", "read_udp_das.exe")
+            # Check if udp_das_cringe.exe exists
+            exe_path = os.path.join("Alinx C Interrogate programm tool", "udp_das_cringe.exe")
             if not os.path.exists(exe_path):
-                QMessageBox.critical(self, "Error", f"read_udp_das.exe not found at {exe_path}")
+                QMessageBox.critical(self, "Error", f"udp_das_cringe.exe not found at {exe_path}")
                 return
 
-            # Copy executable if needed
-            if not os.path.exists("read_udp_das.exe"):
+            # Copy executable to current directory if needed
+            if not os.path.exists("udp_das_cringe.exe"):
                 try:
-                    import shutil
-                    shutil.copy2(exe_path, "read_udp_das.exe")
+                    shutil.copy2(exe_path, "udp_das_cringe.exe")
                 except Exception as e:
-                    error_msg = f"Failed to copy read_udp_das.exe: {str(e)}\n{traceback.format_exc()}"
+                    error_msg = f"Failed to copy udp_das_cringe.exe: {str(e)}\n{traceback.format_exc()}"
                     logging.error(error_msg)
                     QMessageBox.critical(self, "Error", error_msg)
                     return
