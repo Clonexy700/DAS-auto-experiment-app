@@ -188,12 +188,12 @@ class MainWindow(QMainWindow):
         """Set up signal connections for automatic saving."""
         try:
             # Connect serial port changes
-            self.port_input.textChanged.connect(self.save_current_config) # ignore
+            self.port_input.textChanged.connect(self.save_current_config) # type: ignore
             
             # Connect DAS configuration changes
-            self.prefix_input.textChanged.connect(self.save_current_config)
-            self.nfiles_input.valueChanged.connect(self.save_current_config)
-            self.nrefls_input.valueChanged.connect(self.save_current_config)
+            self.prefix_input.textChanged.connect(self.save_current_config) # type: ignore
+            self.nfiles_input.valueChanged.connect(self.save_current_config) # type: ignore
+            self.nrefls_input.valueChanged.connect(self.save_current_config) # type: ignore
 
             # Connect all value change signals for each channel
             for ch in range(1, 4):
@@ -201,9 +201,9 @@ class MainWindow(QMainWindow):
                     for suffix in ['min', 'max', 'step']:
                         widget = getattr(self, f'ch{ch}_{param}_{suffix}')
                         if isinstance(widget, QSpinBox):
-                            widget.valueChanged.connect(self.save_current_config)
+                            widget.valueChanged.connect(self.save_current_config) # type: ignore
                         elif isinstance(widget, QDoubleSpinBox):
-                            widget.valueChanged.connect(self.save_current_config)
+                            widget.valueChanged.connect(self.save_current_config) # type: ignore
 
                 # Connect step value changes to handle step=0
                 amp_step = getattr(self, f'ch{ch}_amp_step')
@@ -226,8 +226,8 @@ class MainWindow(QMainWindow):
                 waveform.currentTextChanged.connect(self.save_current_config)
 
             # Connect experiment control signals
-            self.start_button.clicked.connect(self.start_experiment)
-            self.stop_button.clicked.connect(self.stop_experiment)
+            self.start_button.clicked.connect(self.start_experiment) # type: ignore
+            self.stop_button.clicked.connect(self.stop_experiment) # type: ignore
             logging.info("Signal connections set up successfully")
         except Exception as e:
             error_msg = f"Error setting up connections: {str(e)}\n{traceback.format_exc()}"
@@ -411,7 +411,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", error_msg)
                 return
 
-            self.experiment_controller = ParameterSweepController(config, self)
+            # Initialize experiment controller with None as observer
+            self.experiment_controller = ParameterSweepController(config, None)
             self.experiment_thread = ExperimentThread(self.experiment_controller)
             self.experiment_thread.error.connect(self.handle_error)
             self.experiment_thread.finished.connect(self.experiment_finished)
