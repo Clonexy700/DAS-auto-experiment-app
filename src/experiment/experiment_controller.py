@@ -4,7 +4,7 @@ Experiment controller for parameter sweep experiments.
 import os
 import itertools
 import logging
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional
 from ..core.interfaces import ExperimentController, ExperimentObserver
 from ..devices.piezo_controller import PiezoController
 from ..acquisition.data_acquisition import DASDataAcquisition
@@ -141,7 +141,7 @@ class ParameterSweepController(ExperimentController):
                 # Update progress
                 self.current_step += 1
                 if self.observer:
-                    self.observer.on_progress(self.get_progress())
+                    self.observer.on_progress(self.get_progress(), self.get_total())
             
             if self.observer:
                 self.observer.on_complete()
