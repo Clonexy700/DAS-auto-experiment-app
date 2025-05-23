@@ -1,6 +1,7 @@
 from pztlibrary.usart_lib import SerialConfigurator, load_configuration, USARTError
 import json
 import time
+import threading
 
 class PiezoSweepIterator:
     def __init__(self, config_path='config.json'):
@@ -11,13 +12,14 @@ class PiezoSweepIterator:
     def _reset_state(self):
         self.state = {}
         self.channel_done = {ch: False for ch in ['ch1', 'ch2', 'ch3']}
+        self.last_valid = {}
         for ch in ['ch1', 'ch2', 'ch3']:
             ch_conf = self.base_config.get(ch, {})
-            self.state[ch] = {
-                'v': ch_conf.get('max_v', 0.0),
-                'b': ch_conf.get('max_b', 0.0),
-                'f': ch_conf.get('min_f', 0.0)
-            }
+            v = ch_conf.get('max_v', 0.0)
+            b = ch_conf.get('max_b', 0.0)
+            f_ = ch_conf.get('min_f', 0.0)
+            self.state[ch] = {'v': v, 'b': b, 'f': f_}
+            self.last_valid[ch] = {'v': v, 'b': b, 'f': f_}
         self.finished = False
         print('[PiezoSweepIterator] State reset:', self.state)
 
@@ -47,14 +49,15 @@ class PiezoSweepIterator:
             step_b = ch_conf.get('step_b', 0.0)
             step_f = ch_conf.get('step_f', 0.0)
             if self.channel_done[ch]:
-                print(f'  {ch}: DONE, holding last value v={v}, b={b}, f={f_}')
-                result[ch] = {'v': v, 'b': b, 'f': f_}
+                print(f'  {ch}: DONE, holding last value v={self.last_valid[ch]["v"]}, b={self.last_valid[ch]["b"]}, f={self.last_valid[ch]["f"]}')
+                result[ch] = self.last_valid[ch].copy()
                 continue
             # Clamp values
             v = max(min_v, min(v, max_v))
             b = max(min_b, min(b, max_b))
             f_ = max(min_f, min(f_, max_f))
             result[ch] = {'v': v, 'b': b, 'f': f_}
+            self.last_valid[ch] = {'v': v, 'b': b, 'f': f_}
             print(f'  {ch}: v={v}, b={b}, f={f_}')
             # If any sweepable parameter is out of range, mark channel as done
             v_done = (step_v > 0 and v < min_v)
@@ -110,8 +113,8 @@ def initialize_piezo(port: str):
     with SerialConfigurator(port=port) as sc:
         sc.start_monitoring()
 
-def run_piezo_experiment(sleep_time=1.0, config_path='config.json'):
-    """Run the piezo sweep experiment, nullify at the end or on error."""
+def run_piezo_experiment(sleep_time=5.0, config_path='config.json', stop_event=None):
+    """Run the piezo sweep experiment, nullify at the end or on error or stop."""
     with open(config_path, 'r') as f:
         base_config = json.load(f)
     port = base_config.get('port', 'com4')
@@ -126,11 +129,16 @@ def run_piezo_experiment(sleep_time=1.0, config_path='config.json'):
             sc.start_monitoring()
             sweep = PiezoSweepIterator(config_path)
             for config in sweep:
+                if stop_event is not None and stop_event.is_set():
+                    print('[PiezoSweepIterator] Stopped by user.')
+                    sc.configure_channels(nullify_config)
+                    time.sleep(3)
+                    return
                 sc.configure_channels(config)
                 time.sleep(sleep_time)
             # Nullify at the end
             sc.configure_channels(nullify_config)
-            time.sleep(3)
+            time.sleep(5)
             return
     except Exception as e:
         # Nullify on error
@@ -138,7 +146,7 @@ def run_piezo_experiment(sleep_time=1.0, config_path='config.json'):
             with SerialConfigurator(port=port) as sc:
                 sc.start_monitoring()
                 sc.configure_channels(nullify_config)
-                time.sleep(3)
+                time.sleep(5)
                 return
         except Exception:
             pass

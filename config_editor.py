@@ -1,5 +1,6 @@
 import sys
 import json
+import threading
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QLabel, QDoubleSpinBox, QComboBox, 
                             QGroupBox, QLineEdit, QGridLayout, QFrame, QScrollArea, QPushButton)
@@ -11,13 +12,14 @@ class ExperimentThread(QThread):
     finished = pyqtSignal()
     error = pyqtSignal(str)
 
-    def __init__(self, sleep_time=1.0):
+    def __init__(self, sleep_time=1.0, stop_event=None):
         super().__init__()
         self.sleep_time = sleep_time
+        self.stop_event = stop_event
 
     def run(self):
         try:
-            run_piezo_experiment(sleep_time=self.sleep_time)
+            run_piezo_experiment(sleep_time=self.sleep_time, stop_event=self.stop_event)
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
@@ -240,13 +242,17 @@ class ConfigEditor(QMainWindow):
         port_group.setLayout(port_layout)
         main_layout.addWidget(port_group)
 
-        # Start Experiment button and status
+        # Start/Stop Experiment button and status
         button_layout = QHBoxLayout()
         self.start_button = QPushButton("Start Experiment")
         self.start_button.clicked.connect(self.on_start_experiment)
+        self.stop_button = QPushButton("Stop Experiment")
+        self.stop_button.clicked.connect(self.on_stop_experiment)
+        self.stop_button.setEnabled(False)
         self.status_label = QLabel("")
         self.status_label.setFont(self.default_font)
         button_layout.addWidget(self.start_button)
+        button_layout.addWidget(self.stop_button)
         button_layout.addWidget(self.status_label)
         button_layout.addStretch()
         main_layout.addLayout(button_layout)
@@ -345,19 +351,29 @@ class ConfigEditor(QMainWindow):
 
     def on_start_experiment(self):
         self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
         self.status_label.setText("Running...")
-        self.thread = ExperimentThread(sleep_time=1.0)
+        self.stop_event = threading.Event()
+        self.thread = ExperimentThread(sleep_time=5.0, stop_event=self.stop_event)
         self.thread.finished.connect(self.on_experiment_finished)
         self.thread.error.connect(self.on_experiment_error)
         self.thread.start()
 
+    def on_stop_experiment(self):
+        if hasattr(self, 'stop_event') and self.stop_event is not None:
+            self.stop_event.set()
+        self.status_label.setText("Stopping...")
+        self.stop_button.setEnabled(False)
+
     def on_experiment_finished(self):
         self.status_label.setText("Finished")
         self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
 
     def on_experiment_error(self, msg):
         self.status_label.setText(f"Error: {msg}")
         self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
 
 # Force Fusion style for full dark theme support
 if __name__ == '__main__':
