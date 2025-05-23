@@ -2,6 +2,7 @@ from pztlibrary.usart_lib import SerialConfigurator, load_configuration, USARTEr
 import json
 import time
 import threading
+import subprocess
 
 class PiezoSweepIterator:
     def __init__(self, config_path='config.json'):
@@ -36,9 +37,6 @@ class PiezoSweepIterator:
         print('[PiezoSweepIterator] Yielding config:')
         for ch in ['ch1', 'ch2', 'ch3']:
             ch_conf = self.base_config.get(ch, {})
-            v = self.state[ch]['v']
-            b = self.state[ch]['b']
-            f_ = self.state[ch]['f']
             min_v = ch_conf.get('min_v', 0.0)
             min_b = ch_conf.get('min_b', 0.0)
             min_f = ch_conf.get('min_f', 0.0)
@@ -52,13 +50,10 @@ class PiezoSweepIterator:
                 print(f'  {ch}: DONE, holding last value v={self.last_valid[ch]["v"]}, b={self.last_valid[ch]["b"]}, f={self.last_valid[ch]["f"]}')
                 result[ch] = self.last_valid[ch].copy()
                 continue
-            # Clamp values
-            v = max(min_v, min(v, max_v))
-            b = max(min_b, min(b, max_b))
-            f_ = max(min_f, min(f_, max_f))
-            result[ch] = {'v': v, 'b': b, 'f': f_}
-            self.last_valid[ch] = {'v': v, 'b': b, 'f': f_}
-            print(f'  {ch}: v={v}, b={b}, f={f_}')
+            # Clamp values before checking for done
+            v = max(min_v, min(self.state[ch]['v'], max_v))
+            b = max(min_b, min(self.state[ch]['b'], max_b))
+            f_ = max(min_f, min(self.state[ch]['f'], max_f))
             # If any sweepable parameter is out of range, mark channel as done
             v_done = (step_v > 0 and v < min_v)
             b_done = (step_b > 0 and b < min_b)
@@ -66,28 +61,52 @@ class PiezoSweepIterator:
             if v_done or b_done or f_done:
                 self.channel_done[ch] = True
                 print(f'    {ch} is now DONE (v_done={v_done}, b_done={b_done}, f_done={f_done})')
-            else:
-                all_channels_done = False
+                # Hold last valid value
+                result[ch] = self.last_valid[ch].copy()
+                continue
+            # Not done, so output clamped value and update last_valid
+            result[ch] = {'v': v, 'b': b, 'f': f_}
+            self.last_valid[ch] = {'v': v, 'b': b, 'f': f_}
+            print(f'  {ch}: v={v}, b={b}, f={f_}')
+            all_channels_done = False
         result['wave_type'] = self.base_config.get('wave_type', 'Z')
-        # Prepare next state for channels not done
+        # Prepare next state for channels not done, but check if next step would go out of range
         for ch in ['ch1', 'ch2', 'ch3']:
             if self.channel_done[ch]:
                 continue
             ch_conf = self.base_config.get(ch, {})
-            # v and b: decrement by step, stop if below min
-            if ch_conf.get('step_v', 0.0) != 0:
-                self.state[ch]['v'] -= ch_conf.get('step_v', 0.0)
+            min_v = ch_conf.get('min_v', 0.0)
+            min_b = ch_conf.get('min_b', 0.0)
+            min_f = ch_conf.get('min_f', 0.0)
+            max_v = ch_conf.get('max_v', 0.0)
+            max_b = ch_conf.get('max_b', 0.0)
+            max_f = ch_conf.get('max_f', 0.0)
+            step_v = ch_conf.get('step_v', 0.0)
+            step_b = ch_conf.get('step_b', 0.0)
+            step_f = ch_conf.get('step_f', 0.0)
+            next_v = self.state[ch]['v'] - step_v if step_v != 0 else min_v
+            next_b = self.state[ch]['b'] - step_b if step_b != 0 else min_b
+            next_f = self.state[ch]['f'] + step_f if step_f != 0 else min_f
+            # Check if next step would go out of range or negative
+            if (step_v > 0 and (next_v < min_v or next_v < 0)) or \
+               (step_b > 0 and (next_b < min_b or next_b < 0)) or \
+               (step_f > 0 and (next_f > max_f or next_f < 0)):
+                self.channel_done[ch] = True
+                print(f'    {ch} will be DONE after this step (next_v={next_v}, next_b={next_b}, next_f={next_f})')
+                continue
+            # Only update if not done
+            if step_v != 0:
+                self.state[ch]['v'] = next_v
             else:
-                self.state[ch]['v'] = ch_conf.get('min_v', 0.0)
-            if ch_conf.get('step_b', 0.0) != 0:
-                self.state[ch]['b'] -= ch_conf.get('step_b', 0.0)
+                self.state[ch]['v'] = min_v
+            if step_b != 0:
+                self.state[ch]['b'] = next_b
             else:
-                self.state[ch]['b'] = ch_conf.get('min_b', 0.0)
-            # f: increment by step, stop if above max
-            if ch_conf.get('step_f', 0.0) != 0:
-                self.state[ch]['f'] += ch_conf.get('step_f', 0.0)
+                self.state[ch]['b'] = min_b
+            if step_f != 0:
+                self.state[ch]['f'] = next_f
             else:
-                self.state[ch]['f'] = ch_conf.get('min_f', 0.0)
+                self.state[ch]['f'] = min_f
         print('[PiezoSweepIterator] Next state:', self.state)
         if all_channels_done:
             self.finished = True
@@ -132,10 +151,23 @@ def run_piezo_experiment(sleep_time=5.0, config_path='config.json', stop_event=N
                 if stop_event is not None and stop_event.is_set():
                     print('[PiezoSweepIterator] Stopped by user.')
                     sc.configure_channels(nullify_config)
-                    time.sleep(3)
+                    time.sleep(5)
                     return
                 sc.configure_channels(config)
                 time.sleep(sleep_time)
+                # Call udp_das_cringe.exe and wait for code 0
+                try:
+                    subprocess.check_call([
+                        './udp_das_cringe.exe',
+                        '--dir', 'refls1',
+                        '--nfiles', '3',
+                        '--nrefls', '10000'
+                    ])
+                except subprocess.CalledProcessError as e:
+                    print(f'[PiezoSweepIterator] udp_das_cringe.exe failed with code {e.returncode}')
+                    sc.configure_channels(nullify_config)
+                    time.sleep(5)
+                    return
             # Nullify at the end
             sc.configure_channels(nullify_config)
             time.sleep(5)
