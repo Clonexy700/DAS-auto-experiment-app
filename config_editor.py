@@ -3,10 +3,11 @@ import json
 import threading
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                             QHBoxLayout, QLabel, QDoubleSpinBox, QComboBox, 
-                            QGroupBox, QLineEdit, QGridLayout, QFrame, QScrollArea, QPushButton)
+                            QGroupBox, QLineEdit, QGridLayout, QFrame, QScrollArea, QPushButton, QFormLayout)
 from PyQt5.QtCore import Qt, QSettings, QThread, pyqtSignal
 from PyQt5.QtGui import QFont, QIcon
 from piezo_control_service import run_piezo_experiment
+import os
 
 class ExperimentThread(QThread):
     finished = pyqtSignal()
@@ -25,6 +26,8 @@ class ExperimentThread(QThread):
             self.error.emit(str(e))
 
 class ConfigEditor(QMainWindow):
+    INIT_KEYS = ["Ng", "line_length", "len_udp_pack", "freq_send_data", "pulse_width"]
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle("DAS Configuration Editor")
@@ -257,6 +260,42 @@ class ConfigEditor(QMainWindow):
         button_layout.addStretch()
         main_layout.addLayout(button_layout)
 
+        # Ensure INIT and UDP_DAS params are present in config.json (import from INIT or set defaults if missing)
+        self.ensure_init_params_in_config()
+        self.ensure_udp_params_in_config()
+
+        # INIT parameters section (from config.json, not INIT file)
+        self.init_param_widgets = {}
+        init_group = QGroupBox("INIT Parameters (for udp_das_cringe.exe)")
+        init_group.setFont(self.section_font)
+        init_layout = QFormLayout()
+        for key in self.INIT_KEYS:
+            value = self.load_init_param_from_config(key)
+            widget = QLineEdit(str(value))
+            widget.setFont(self.default_font)
+            widget.setMinimumHeight(32)
+            widget.editingFinished.connect(self.save_init_params)
+            init_layout.addRow(QLabel(key), widget)
+            self.init_param_widgets[key] = widget
+        init_group.setLayout(init_layout)
+        main_layout.addWidget(init_group)
+
+        # udp_das_cringe.exe parameters section
+        self.udp_params = self.load_udp_params()
+        udp_group = QGroupBox("UDP DAS Cringe Parameters (for udp_das_cringe.exe)")
+        udp_group.setFont(self.section_font)
+        udp_layout = QFormLayout()
+        self.udp_param_widgets = {}
+        for key in ['dir', 'nfiles', 'nrefls']:
+            widget = QLineEdit(str(self.udp_params.get(key, '')))
+            widget.setFont(self.default_font)
+            widget.setMinimumHeight(32)
+            widget.editingFinished.connect(self.save_udp_params)
+            udp_layout.addRow(QLabel(key), widget)
+            self.udp_param_widgets[key] = widget
+        udp_group.setLayout(udp_layout)
+        main_layout.addWidget(udp_group)
+
         main_layout.addStretch(1)
         self.load_config()
         self.resize(900, 1050)
@@ -333,7 +372,12 @@ class ConfigEditor(QMainWindow):
             print(f"Error loading configuration: {e}")
 
     def save_config(self):
-        config = {}
+        # Read full config, update only channel, wave_type, prefix, port
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+        except Exception:
+            config = {}
         for channel, widgets in self.channel_widgets.items():
             config[channel] = {}
             for param in ['v', 'b', 'f']:
@@ -374,6 +418,93 @@ class ConfigEditor(QMainWindow):
         self.status_label.setText(f"Error: {msg}")
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
+
+    def load_init_param_from_config(self, key):
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+            return config.get(key, '')
+        except Exception:
+            return ''
+
+    def save_init_params(self):
+        # Save to config.json and INIT file (always keep in sync)
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+        except Exception:
+            config = {}
+        for k, w in self.init_param_widgets.items():
+            config[k] = w.text()
+        with open('config.json', 'w') as f:
+            json.dump(config, f, indent=4)
+        # Also sync to INIT file
+        with open('INIT', 'w') as f:
+            for k in self.INIT_KEYS:
+                v = self.init_param_widgets[k].text()
+                f.write(f'{k} = {v}\n')
+
+    def load_udp_params(self):
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+            return {k: config.get(k, '') for k in ['dir', 'nfiles', 'nrefls']}
+        except Exception:
+            return {'dir': '', 'nfiles': '', 'nrefls': ''}
+
+    def save_udp_params(self):
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+        except Exception:
+            config = {}
+        for k, w in self.udp_param_widgets.items():
+            config[k] = w.text()
+        with open('config.json', 'w') as f:
+            json.dump(config, f, indent=4)
+
+    def ensure_init_params_in_config(self):
+        """Ensure all INIT_KEYS are present in config.json, importing from INIT file if missing."""
+        config = {}
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+        except Exception:
+            config = {}
+        # Read INIT file if present
+        init_values = {}
+        if os.path.exists('INIT'):
+            with open('INIT', 'r') as f:
+                for line in f:
+                    if '=' in line:
+                        k, v = line.strip().split('=', 1)
+                        init_values[k.strip()] = v.strip()
+        changed = False
+        for k in self.INIT_KEYS:
+            if k not in config or config[k] == '':
+                config[k] = init_values.get(k, '')
+                changed = True
+        if changed:
+            with open('config.json', 'w') as f:
+                json.dump(config, f, indent=4)
+
+    def ensure_udp_params_in_config(self):
+        """Ensure UDP_DAS params are present in config.json, set defaults if missing."""
+        config = {}
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+        except Exception:
+            config = {}
+        defaults = {'dir': 'refls1', 'nfiles': 3, 'nrefls': 10000}
+        changed = False
+        for k, v in defaults.items():
+            if k not in config or config[k] == '':
+                config[k] = v
+                changed = True
+        if changed:
+            with open('config.json', 'w') as f:
+                json.dump(config, f, indent=4)
 
 # Force Fusion style for full dark theme support
 if __name__ == '__main__':

@@ -1,0 +1,5 @@
+Ng = 1.46
+line_length = 1000
+len_udp_pack = 1000
+freq_send_data = 1000
+pulse_width = 200

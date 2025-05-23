@@ -34,5 +34,13 @@
     },
     "wave_type": "Z",
     "prefix": "H01.20 A",
-    "port": "com4"
+    "port": "com4",
+    "dir": "refls1",
+    "nfiles": 3,
+    "nrefls": 10000,
+    "Ng": "1.46",
+    "line_length": "1000",
+    "len_udp_pack": "1000",
+    "freq_send_data": "1000",
+    "pulse_width": "200"
 }

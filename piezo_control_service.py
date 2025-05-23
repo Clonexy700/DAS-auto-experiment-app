@@ -3,6 +3,8 @@ import json
 import time
 import threading
 import subprocess
+import os
+import shutil
 
 class PiezoSweepIterator:
     def __init__(self, config_path='config.json'):
@@ -14,6 +16,7 @@ class PiezoSweepIterator:
         self.state = {}
         self.channel_done = {ch: False for ch in ['ch1', 'ch2', 'ch3']}
         self.last_valid = {}
+        self.last_yielded = None
         for ch in ['ch1', 'ch2', 'ch3']:
             ch_conf = self.base_config.get(ch, {})
             v = ch_conf.get('max_v', 0.0)
@@ -70,6 +73,12 @@ class PiezoSweepIterator:
             print(f'  {ch}: v={v}, b={b}, f={f_}')
             all_channels_done = False
         result['wave_type'] = self.base_config.get('wave_type', 'Z')
+        # Stop if config is identical to last yielded
+        if self.last_yielded is not None and result == self.last_yielded:
+            print('[PiezoSweepIterator] Config not unique, stopping iteration.')
+            self.finished = True
+            raise StopIteration
+        self.last_yielded = json.loads(json.dumps(result))  # deep copy
         # Prepare next state for channels not done, but check if next step would go out of range
         for ch in ['ch1', 'ch2', 'ch3']:
             if self.channel_done[ch]:
@@ -143,6 +152,12 @@ def run_piezo_experiment(sleep_time=5.0, config_path='config.json', stop_event=N
         'ch3': {'v': 0, 'b': 0, 'f': 0},
         'wave_type': base_config.get('wave_type', 'Z')
     }
+    udp_dir = base_config.get('dir', 'refls1')
+    udp_nfiles = str(base_config.get('nfiles', 3))
+    udp_nrefls = str(base_config.get('nrefls', 10000))
+    prefix = base_config.get('prefix', 'experiment')
+    os.makedirs(prefix, exist_ok=True)
+    counter = 1
     try:
         with SerialConfigurator(port=port) as sc:
             sc.start_monitoring()
@@ -159,15 +174,29 @@ def run_piezo_experiment(sleep_time=5.0, config_path='config.json', stop_event=N
                 try:
                     subprocess.check_call([
                         './udp_das_cringe.exe',
-                        '--dir', 'refls1',
-                        '--nfiles', '3',
-                        '--nrefls', '10000'
+                        '--dir', udp_dir,
+                        '--nfiles', udp_nfiles,
+                        '--nrefls', udp_nrefls
                     ])
                 except subprocess.CalledProcessError as e:
                     print(f'[PiezoSweepIterator] udp_das_cringe.exe failed with code {e.returncode}')
                     sc.configure_channels(nullify_config)
                     time.sleep(5)
                     return
+                # After process, move files to {prefix}/{counter} {prefix} f=..., v=..., b=...
+                v = config['ch1']['v']
+                b = config['ch1']['b']
+                f_ = config['ch1']['f']
+                folder_name = f"{counter} {prefix} f={f_}, v={v}, b={b}"
+                dest_dir = os.path.join(prefix, folder_name)
+                os.makedirs(dest_dir, exist_ok=True)
+                # Move all files from udp_dir to dest_dir
+                for fname in os.listdir(udp_dir):
+                    src_path = os.path.join(udp_dir, fname)
+                    dst_path = os.path.join(dest_dir, fname)
+                    if os.path.isfile(src_path):
+                        shutil.move(src_path, dst_path)
+                counter += 1
             # Nullify at the end
             sc.configure_channels(nullify_config)
             time.sleep(5)
