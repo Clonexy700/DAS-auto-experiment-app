@@ -13,111 +13,36 @@ class PiezoSweepIterator:
         self._reset_state()
 
     def _reset_state(self):
-        self.state = {}
-        self.channel_done = {ch: False for ch in ['ch1', 'ch2', 'ch3']}
-        self.last_valid = {}
-        self.last_yielded = None
-        for ch in ['ch1', 'ch2', 'ch3']:
-            ch_conf = self.base_config.get(ch, {})
-            v = ch_conf.get('max_v', 0.0)
-            b = ch_conf.get('max_b', 0.0)
-            f_ = ch_conf.get('min_f', 0.0)
-            self.state[ch] = {'v': v, 'b': b, 'f': f_}
-            self.last_valid[ch] = {'v': v, 'b': b, 'f': f_}
+        self.steps = self.base_config.get('steps', [])
+        self.current_step = 0
         self.finished = False
-        print('[PiezoSweepIterator] State reset:', self.state)
+        print(f'[PiezoSweepIterator] Loaded {len(self.steps)} steps from config')
+        for i, step in enumerate(self.steps):
+            print(f'Step {i+1}:')
+            for ch in ['ch1', 'ch2', 'ch3']:
+                v = step.get(ch, {}).get('v', 0.0)
+                b = step.get(ch, {}).get('b', 0.0)
+                f_ = step.get(ch, {}).get('f', 0.0)
+                print(f'  {ch}: v={v}, b={b}, f={f_}')
 
     def __iter__(self):
         self._reset_state()
         return self
 
     def __next__(self):
-        if self.finished:
+        if self.finished or self.current_step >= len(self.steps):
             print('[PiezoSweepIterator] Iteration finished.')
             raise StopIteration
-        result = {}
-        all_channels_done = True
-        print('[PiezoSweepIterator] Yielding config:')
-        for ch in ['ch1', 'ch2', 'ch3']:
-            ch_conf = self.base_config.get(ch, {})
-            min_v = ch_conf.get('min_v', 0.0)
-            min_b = ch_conf.get('min_b', 0.0)
-            min_f = ch_conf.get('min_f', 0.0)
-            max_v = ch_conf.get('max_v', 0.0)
-            max_b = ch_conf.get('max_b', 0.0)
-            max_f = ch_conf.get('max_f', 0.0)
-            step_v = ch_conf.get('step_v', 0.0)
-            step_b = ch_conf.get('step_b', 0.0)
-            step_f = ch_conf.get('step_f', 0.0)
-            if self.channel_done[ch]:
-                print(f'  {ch}: DONE, holding last value v={self.last_valid[ch]["v"]}, b={self.last_valid[ch]["b"]}, f={self.last_valid[ch]["f"]}')
-                result[ch] = self.last_valid[ch].copy()
-                continue
-            # Clamp values before checking for done
-            v = max(min_v, min(self.state[ch]['v'], max_v))
-            b = max(min_b, min(self.state[ch]['b'], max_b))
-            f_ = max(min_f, min(self.state[ch]['f'], max_f))
-            # If any sweepable parameter is out of range, mark channel as done
-            v_done = (step_v > 0 and v < min_v)
-            b_done = (step_b > 0 and b < min_b)
-            f_done = (step_f > 0 and f_ > max_f)
-            if v_done or b_done or f_done:
-                self.channel_done[ch] = True
-                print(f'    {ch} is now DONE (v_done={v_done}, b_done={b_done}, f_done={f_done})')
-                # Hold last valid value
-                result[ch] = self.last_valid[ch].copy()
-                continue
-            # Not done, so output clamped value and update last_valid
-            result[ch] = {'v': v, 'b': b, 'f': f_}
-            self.last_valid[ch] = {'v': v, 'b': b, 'f': f_}
-            print(f'  {ch}: v={v}, b={b}, f={f_}')
-            all_channels_done = False
+        result = self.steps[self.current_step].copy()
         result['wave_type'] = self.base_config.get('wave_type', 'Z')
-        # Stop if config is identical to last yielded
-        if self.last_yielded is not None and result == self.last_yielded:
-            print('[PiezoSweepIterator] Config not unique, stopping iteration.')
-            self.finished = True
-            raise StopIteration
-        self.last_yielded = json.loads(json.dumps(result))  # deep copy
-        # Prepare next state for channels not done, but check if next step would go out of range
+        print(f'[PiezoSweepIterator] Executing step {self.current_step + 1}:')
         for ch in ['ch1', 'ch2', 'ch3']:
-            if self.channel_done[ch]:
-                continue
-            ch_conf = self.base_config.get(ch, {})
-            min_v = ch_conf.get('min_v', 0.0)
-            min_b = ch_conf.get('min_b', 0.0)
-            min_f = ch_conf.get('min_f', 0.0)
-            max_v = ch_conf.get('max_v', 0.0)
-            max_b = ch_conf.get('max_b', 0.0)
-            max_f = ch_conf.get('max_f', 0.0)
-            step_v = ch_conf.get('step_v', 0.0)
-            step_b = ch_conf.get('step_b', 0.0)
-            step_f = ch_conf.get('step_f', 0.0)
-            next_v = self.state[ch]['v'] - step_v if step_v != 0 else min_v
-            next_b = self.state[ch]['b'] - step_b if step_b != 0 else min_b
-            next_f = self.state[ch]['f'] + step_f if step_f != 0 else min_f
-            # Check if next step would go out of range or negative
-            if (step_v > 0 and (next_v < min_v or next_v < 0)) or \
-               (step_b > 0 and (next_b < min_b or next_b < 0)) or \
-               (step_f > 0 and (next_f > max_f or next_f < 0)):
-                self.channel_done[ch] = True
-                print(f'    {ch} will be DONE after this step (next_v={next_v}, next_b={next_b}, next_f={next_f})')
-                continue
-            # Only update if not done
-            if step_v != 0:
-                self.state[ch]['v'] = next_v
-            else:
-                self.state[ch]['v'] = min_v
-            if step_b != 0:
-                self.state[ch]['b'] = next_b
-            else:
-                self.state[ch]['b'] = min_b
-            if step_f != 0:
-                self.state[ch]['f'] = next_f
-            else:
-                self.state[ch]['f'] = min_f
-        print('[PiezoSweepIterator] Next state:', self.state)
-        if all_channels_done:
+            v = result.get(ch, {}).get('v', 0.0)
+            b = result.get(ch, {}).get('b', 0.0)
+            f_ = result.get(ch, {}).get('f', 0.0)
+            print(f'  {ch}: v={v}, b={b}, f={f_}')
+        self.current_step += 1
+        if self.current_step >= len(self.steps):
             self.finished = True
         return result
 
