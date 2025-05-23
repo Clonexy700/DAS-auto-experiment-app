@@ -20,7 +20,7 @@
             "max": 100.0,
             "step": 0.0
         },
-        "waveform_type": "S"
+        "waveform_type": "Z"
     },
     "ch2": {
         "amplitude": {
@@ -38,7 +38,7 @@
             "max": 0.0,
             "step": 0.0
         },
-        "waveform_type": "S"
+        "waveform_type": "Z"
     },
     "ch3": {
         "amplitude": {
@@ -56,6 +56,6 @@
             "max": 0.0,
             "step": 0.0
         },
-        "waveform_type": "S"
+        "waveform_type": "Z"
     }
 }

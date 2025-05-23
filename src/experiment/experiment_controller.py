@@ -4,10 +4,12 @@ Experiment controller for parameter sweep experiments.
 import os
 import itertools
 import logging
+import time
 from typing import List, Dict, Any, Optional
 from ..core.interfaces import ExperimentController, ExperimentObserver
 from ..devices.piezo_controller import PiezoController
 from ..acquisition.data_acquisition import DASDataAcquisition
+from ..acquisition.acquisition_controller import AcquisitionController
 
 class ParameterSweepController(ExperimentController):
     """Controller for parameter sweep experiments."""
@@ -16,11 +18,27 @@ class ParameterSweepController(ExperimentController):
         """Initialize the experiment controller."""
         self.config = config
         self.observer = observer
-        self.piezo = PiezoController(port=config.get("serial_port", "com4"))
-        self.das = DASDataAcquisition(config)
+        self.piezo: Optional[PiezoController] = None
+        self.acquisition: Optional[AcquisitionController] = None
         self.running = False
         self.current_step = 0
         self.total_steps = self._calculate_total_steps()
+        self._initialize_controllers()
+
+    def _initialize_controllers(self):
+        """Initialize controllers with proper error handling"""
+        try:
+            # First try to initialize piezo controller
+            self.piezo = PiezoController(port=self.config.get("serial_port", "com4"))
+            time.sleep(0.5)  # Give time for port to stabilize
+            
+            # Then initialize acquisition controller
+            self.acquisition = AcquisitionController(self.config)
+            
+        except Exception as e:
+            logging.error(f"Failed to initialize controllers: {str(e)}")
+            self.cleanup()
+            raise
 
     def get_progress(self) -> int:
         """Get experiment progress as percentage."""
@@ -107,51 +125,56 @@ class ParameterSweepController(ExperimentController):
     def start_experiment(self) -> None:
         """Start the experiment."""
         if self.running:
+            logging.warning("Experiment already running")
             return
 
-        self.running = True
-        self.current_step = 0
-        
         try:
+            self.running = True
+            self.current_step = 0
+            
             # Prepare directories
             os.makedirs("data", exist_ok=True)
             
-            # Generate parameter combinations
-            param_combinations = self._generate_parameter_combinations()
-            
-            for params in param_combinations:
-                if not self.running:
-                    break
+            # Initialize controllers using context manager
+            with PiezoController(port=self.config.get("serial_port", "com4")) as self.piezo:
+                self.piezo.start_monitoring()
                 
-                # Configure piezo
-                self.piezo.configure({
-                    "waveform_type": self.config["ch1"]["waveform_type"],
-                    "amplitude": params["amplitude"],
-                    "bias": params["bias"],
-                    "frequency": params["frequency"]
-                })
+                # Generate parameter combinations
+                param_combinations = self._generate_parameter_combinations()
                 
-                # Create output folder
-                output_folder = self._create_output_folder(params)
+                for params in param_combinations:
+                    if not self.running:
+                        break
+                    
+                    # Configure piezo
+                    self.piezo.configure({
+                        "waveform_type": self.config["ch1"]["waveform_type"],
+                        "amplitude": params["amplitude"],
+                        "bias": params["bias"],
+                        "frequency": params["frequency"]
+                    })
+                    
+                    # Create output folder
+                    output_folder = self._create_output_folder(params)
+                    
+                    # Acquire data
+                    if self.acquisition.acquire_data():
+                        self.acquisition.move_data_files(output_folder)
+                    
+                    # Update progress
+                    self.current_step += 1
+                    if self.observer:
+                        self.observer.on_progress(self.get_progress(), self.get_total())
                 
-                # Acquire data
-                if self.das.acquire_data():
-                    self.das.move_data_files(output_folder)
-                
-                # Update progress
-                self.current_step += 1
                 if self.observer:
-                    self.observer.on_progress(self.get_progress(), self.get_total())
-            
-            if self.observer:
-                self.observer.on_complete()
-                
+                    self.observer.on_complete()
+                    
         except Exception as e:
             logging.error(f"Error during experiment: {str(e)}")
             if self.observer:
                 self.observer.on_error(str(e))
         finally:
-            self.cleanup()
+            self.running = False
 
     def stop_experiment(self) -> None:
         """Stop the experiment."""
@@ -160,9 +183,18 @@ class ParameterSweepController(ExperimentController):
     def cleanup(self) -> None:
         """Clean up resources."""
         try:
-            self.piezo.cleanup()
-            self.das.cleanup()
+            if self.piezo:
+                self.piezo.close()
+                time.sleep(0.5)  # Give time for port to be released
+            if self.acquisition:
+                self.acquisition.cleanup()
         except Exception as e:
             logging.error(f"Error during cleanup: {str(e)}")
         finally:
-            self.running = False 
+            self.running = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup() 

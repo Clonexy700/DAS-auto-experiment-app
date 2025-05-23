@@ -404,6 +404,7 @@ class MainWindow(QMainWindow):
 
             # Initialize serial controller
             try:
+                print(config)
                 self.serial_controller = SerialConfigurator(port=config["serial_port"])
             except Exception as e:
                 error_msg = f"Failed to initialize serial controller: {str(e)}"
