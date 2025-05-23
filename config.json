@@ -1,0 +1,38 @@
+{
+    "ch1": {
+        "min_v": 1.0,
+        "max_v": 50.0,
+        "step_v": 5.0,
+        "min_b": 25.0,
+        "max_b": 0.5,
+        "step_b": 2.5,
+        "min_f": 100.0,
+        "max_f": 100.0,
+        "step_f": 0.0
+    },
+    "ch2": {
+        "min_v": 0.0,
+        "max_v": 0.0,
+        "step_v": 0.0,
+        "min_b": 0.0,
+        "max_b": -2.7755575615628914e-17,
+        "step_b": 0.0,
+        "min_f": 0.0,
+        "max_f": 0.0,
+        "step_f": 0.0
+    },
+    "ch3": {
+        "min_v": 0.0,
+        "max_v": 0.0,
+        "step_v": 0.0,
+        "min_b": 0.0,
+        "max_b": 0.0,
+        "step_b": 0.0,
+        "min_f": 0.0,
+        "max_f": 0.0,
+        "step_f": 0.0
+    },
+    "wave_type": "Z",
+    "prefix": "H01.20 A",
+    "port": "com4"
+}

@@ -1,9 +1,0 @@
-include README.md
-include LICENSE
-include requirements.txt
-recursive-include pztlibrary *.py
-recursive-include pztlibrary *.json
-recursive-include pztlibrary *.md
-recursive-include src *.py
-recursive-include src *.json
-recursive-include src *.md 
